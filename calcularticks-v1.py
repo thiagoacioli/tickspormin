@@ -1,211 +1,169 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
+import altair as alt
 
 # Configuração da página
 st.set_page_config(
-    page_title="Calculadora de Ticks - Odds Under",
-    page_icon="⚽",
-    layout="centered"
+    page_title="Calculadora de Ticks para Under Limite",
+    page_icon="📉",
+    layout="wide"
 )
 
-# Funções para cálculos
-def calcular_ticks(odd_atual, tempo_atual, periodo_final=45):
-    """
-    Calcula ticks por minuto para odds regressivas de under
-    A odd deve chegar a 1.01 no final do período (45 ou 90 min)
-    """
-    # Quanto a odd precisa diminuir até o final do período
-    diferenca_odd = odd_atual - 1.01
-    
-    # Quanto tempo resta até o final do período
-    tempo_restante = periodo_final - tempo_atual
-    
-    # Se não há tempo restante, não podemos calcular ticks
-    if tempo_restante <= 0:
-        return 0
-    
-    # Ticks por minuto para atingir 1.01 no final do período
-    ticks = (diferenca_odd * 100) / tempo_restante
-    
-    return ticks
+# Função para calcular ticks por minuto
+def calcular_ticks(odd, tempo):
+    return ((odd - 1) * 100) / tempo
 
-def prever_odds_futuras(odd_atual, ticks, tempo_atual, minutos_futuros):
-    """
-    Prevê odds futuras com base nos ticks por minuto (para odds regressivas)
-    """
-    odds_previstas = {}
+# Função para prever odds futuras
+def prever_odds(odd_atual, tempo_atual, ticks, periodo="HT"):
+    if periodo == "HT":
+        tempo_final = 45
+    else:
+        tempo_final = 90
     
-    for minuto in minutos_futuros:
-        # Quanto tempo passou desde a odd atual
-        tempo_passado = minuto - tempo_atual
-        
-        # Redução na odd baseada nos ticks
-        reducao = (ticks * tempo_passado) / 100
-        
-        # Nova odd prevista (regressiva)
-        odd_prevista = max(1.01, odd_atual - reducao)
-        
-        odds_previstas[minuto] = odd_prevista
-        
-    return odds_previstas
+    # Tempo restante
+    tempo_restante = tempo_final - tempo_atual
+    
+    # Lista para armazenar previsões
+    previsoes = []
+    
+    # Calcula odds para cada minuto restante
+    for t in range(1, tempo_restante + 1):
+        minuto = tempo_atual + t
+        # Quanto a odd deve cair em t minutos baseado no tick atual
+        queda = (ticks * t) / 100
+        odd_prevista = max(odd_atual - queda, 1.01)
+        previsoes.append({"Minuto": minuto, "Odd Prevista": odd_prevista})
+    
+    return previsoes
 
-# Título e descrição
-st.title("⚽ Calculadora de Ticks - Odds Under")
+# Título do aplicativo
+st.title("Calculadora de Ticks para Under Limite")
 st.markdown("""
-Esta calculadora está otimizada para odds de under, que são regressivas e tendem a 1.01 
-ao final de cada período (45 min para HT e 90 min para FT).
+Esta calculadora ajuda a prever odds regressivas no mercado de under limite, onde as odds devem 
+chegar a 1.01 no final de cada período (HT: minuto 45, FT: minuto 90).
 """)
 
-# Layout em colunas para os inputs
-col1, col2 = st.columns(2)
+# Layout em colunas
+col1, col2 = st.columns([1, 2])
 
+# Coluna de entrada de dados
 with col1:
-    odd_atual = st.number_input(
-        "Odd Atual:",
-        min_value=1.01,
-        max_value=10.0,
-        value=1.5,
-        step=0.01,
-        format="%.2f",
-        help="Insira a odd atual de under (maior que 1.01)"
-    )
-
-with col2:
-    tempo_atual = st.number_input(
-        "Tempo Atual (minutos):",
-        min_value=0,
-        max_value=90,
-        value=15,
-        step=1,
-        help="Insira o tempo atual da partida (0-90 minutos)"
-    )
-
-# Determinar se é primeiro ou segundo tempo
-if tempo_atual <= 45:
-    periodo = "Primeiro Tempo (HT)"
-    periodo_final = 45
-else:
-    periodo = "Segundo Tempo (FT)"
-    periodo_final = 90
-
-st.info(f"Período atual: **{periodo}** | O valor da odd deve chegar a **1.01** no minuto **{periodo_final}**")
-
-# Cálculo dos ticks por minuto
-if st.button("Calcular Ticks e Prever Odds Futuras"):
-    # Verificar se há tempo suficiente para o cálculo
-    if tempo_atual >= periodo_final:
-        st.warning(f"O tempo atual já atingiu ou ultrapassou o final do período ({periodo_final} min).")
-    else:
-        # Calcular ticks
-        ticks = calcular_ticks(odd_atual, tempo_atual, periodo_final)
+    st.subheader("Dados atuais")
+    
+    # Seleção do período
+    periodo = st.radio("Período:", ["Primeiro Tempo (HT)", "Segundo Tempo (FT)"], horizontal=True)
+    periodo_codigo = "HT" if periodo == "Primeiro Tempo (HT)" else "FT"
+    
+    # Range de tempo permitido baseado no período
+    min_tempo = 0 if periodo_codigo == "HT" else 46
+    max_tempo = 44 if periodo_codigo == "HT" else 89  # Um minuto antes do fim para permitir cálculos
+    
+    # Entrada de dados em um form
+    with st.form(key="calculadora_form"):
+        odd_atual = st.number_input(
+            "Odd atual:",
+            min_value=1.02,
+            max_value=10.0,
+            value=1.5,
+            step=0.01,
+            format="%.2f"
+        )
         
-        # Exibir resultado dos ticks
-        st.success(f"**Ticks por minuto: {ticks:.2f}**")
+        tempo_atual = st.number_input(
+            f"Minuto atual ({min_tempo}-{max_tempo}):",
+            min_value=min_tempo,
+            max_value=max_tempo,
+            value=min_tempo,
+            step=1
+        )
         
-        # Determinar próximos minutos para previsão
-        if tempo_atual < 45:
-            # Primeiro tempo - até 45 min
-            proximos_minutos = list(range(tempo_atual + 5, 46, 5))
-        else:
-            # Segundo tempo - até 90 min
-            proximos_minutos = list(range(tempo_atual + 5, 91, 5))
-        
-        if not proximos_minutos:
-            st.warning("Não há minutos futuros disponíveis para previsão neste período.")
-        else:
-            # Prever odds futuras
-            odds_previstas = prever_odds_futuras(odd_atual, ticks, tempo_atual, proximos_minutos)
-            
-            # Criar DataFrame para exibição
-            df_previsao = pd.DataFrame({
-                "Minuto": proximos_minutos,
-                "Odd Prevista": [round(odds_previstas[min], 2) for min in proximos_minutos]
-            })
-            
-            # Adicionar linha para o final do período sempre mostrando 1.01
-            df_final = pd.DataFrame({
-                "Minuto": [periodo_final],
-                "Odd Prevista": [1.01]
-            })
-            
-            df_completo = pd.concat([df_previsao, df_final]).sort_values("Minuto")
-            
-            # Exibir tabela de previsão
-            st.subheader("Previsão de Odds Futuras")
-            st.dataframe(df_completo, hide_index=True)
-            
-            # Exibir dados em formato de tabela HTML para melhor visualização
-            st.subheader("Tabela de Referência")
-            
-            # Criar tabela HTML
-            html_table = """
-            <table style="width:100%; border-collapse: collapse; text-align: center;">
-                <tr style="background-color: #f2f2f2;">
-                    <th style="padding: 8px; border: 1px solid #ddd;">Minuto</th>
-                    <th style="padding: 8px; border: 1px solid #ddd;">Odd Prevista</th>
-                </tr>
-            """
-            
-            # Adicionar linha para o tempo atual
-            html_table += f"""
-                <tr style="background-color: #e6f7ff;">
-                    <td style="padding: 8px; border: 1px solid #ddd;"><strong>{tempo_atual}</strong></td>
-                    <td style="padding: 8px; border: 1px solid #ddd;"><strong>{odd_atual:.2f}</strong></td>
-                </tr>
-            """
-            
-            # Adicionar linhas para cada previsão
-            for minuto in proximos_minutos:
-                html_table += f"""
-                    <tr>
-                        <td style="padding: 8px; border: 1px solid #ddd;">{minuto}</td>
-                        <td style="padding: 8px; border: 1px solid #ddd;">{odds_previstas[minuto]:.2f}</td>
-                    </tr>
-                """
-            
-            # Adicionar linha para o final do período
-            html_table += f"""
-                <tr style="background-color: #e6ffe6;">
-                    <td style="padding: 8px; border: 1px solid #ddd;"><strong>{periodo_final}</strong></td>
-                    <td style="padding: 8px; border: 1px solid #ddd;"><strong>1.01</strong></td>
-                </tr>
-            """
-            
-            html_table += "</table>"
-            
-            st.markdown(html_table, unsafe_allow_html=True)
+        calcular = st.form_submit_button("Calcular e Prever")
 
-# Explicação da fórmula
-with st.expander("Como funcionam os cálculos para odds de under?"):
-    st.markdown("""
-    ### Lógica das odds de under
+# Cálculos e visualizações
+if calcular or 'calculos_realizados' in st.session_state:
+    # Armazenar que os cálculos foram realizados
+    st.session_state.calculos_realizados = True
     
-    As odds de under são regressivas, ou seja, diminuem com o tempo e tendem a 1.01 no final do período (45 min para primeiro tempo e 90 min para segundo tempo).
+    # Tempo final do período
+    tempo_final = 45 if periodo_codigo == "HT" else 90
     
-    ### Fórmula para calcular Ticks por Minuto
+    # Tempo restante
+    tempo_restante = tempo_final - tempo_atual
     
-    ```
-    Diferença de odd = odd atual - 1.01
-    Tempo restante = final do período - tempo atual
-    Ticks por Minuto = (diferença de odd * 100) / tempo restante
-    ```
+    # Calcular ticks por minuto
+    ticks = calcular_ticks(odd_atual, tempo_restante)
     
-    ### Fórmula para prever Odds Futuras
+    # Gerar previsões
+    previsoes = prever_odds(odd_atual, tempo_atual, ticks, periodo_codigo)
+    df_previsoes = pd.DataFrame(previsoes)
     
-    ```
-    Tempo passado = minuto futuro - tempo atual
-    Redução na odd = (ticks * tempo passado) / 100
-    Odd Prevista = odd atual - redução (nunca menor que 1.01)
-    ```
-    
-    ### Exemplo:
-    Se a odd atual é 1.5 aos 15 minutos do primeiro tempo:
-    - Diferença de odd = 1.5 - 1.01 = 0.49
-    - Tempo restante = 45 - 15 = 30 minutos
-    - Ticks = (0.49 * 100) / 30 = 1.63 ticks por minuto
-    - Odd prevista para o minuto 30: 1.5 - ((1.63 * 15) / 100) = 1.26
-    """)
+    # Coluna de resultados
+    with col2:
+        st.subheader("Resultados")
+        
+        # Métricas principais
+        metricas_col1, metricas_col2, metricas_col3 = st.columns(3)
+        
+        with metricas_col1:
+            st.metric("Ticks por Minuto", f"{ticks:.2f}")
+        
+        with metricas_col2:
+            odd_final_prevista = max(df_previsoes.iloc[-1]["Odd Prevista"], 1.01)
+            st.metric("Odd Final Prevista", f"{odd_final_prevista:.2f}")
+        
+        with metricas_col3:
+            st.metric("Tempo Restante", f"{tempo_restante} min")
+        
+        # Gráfico de previsão
+        st.subheader("Previsão de Odds")
+        
+        # Adicionar odd atual ao dataframe para o gráfico
+        df_grafico = pd.DataFrame([{"Minuto": tempo_atual, "Odd Prevista": odd_atual}] + previsoes)
+        
+        # Criar gráfico com Altair
+        chart = alt.Chart(df_grafico).mark_line(
+            point=alt.OverlayMarkDef(color="red")
+        ).encode(
+            x=alt.X('Minuto:Q', title='Minuto'),
+            y=alt.Y('Odd Prevista:Q', title='Odd', scale=alt.Scale(domain=[1, max(df_grafico["Odd Prevista"]) * 1.1])),
+            tooltip=['Minuto', 'Odd Prevista']
+        ).properties(
+            width=600,
+            height=400
+        ).interactive()
+        
+        st.altair_chart(chart, use_container_width=True)
+        
+        # Tabela de previsões
+        st.subheader("Tabela de Previsões")
+        
+        # Adicionar formatação à tabela
+        df_display = df_previsoes.copy()
+        df_display["Odd Prevista"] = df_display["Odd Prevista"].apply(lambda x: f"{x:.2f}")
+        
+        # Exibir tabela
+        st.dataframe(df_display, use_container_width=True)
 
 # Informações adicionais
-st.caption("Este aplicativo é uma ferramenta de previsão para odds de under e simula a tendência natural dessas odds de atingirem 1.01 ao final de cada período.")
+with st.expander("Como usar esta calculadora"):
+    st.markdown("""
+    ### Como usar esta calculadora:
+    
+    1. Selecione o período (Primeiro Tempo ou Segundo Tempo)
+    2. Insira a odd atual do mercado under limite
+    3. Insira o minuto atual da partida
+    4. Clique em "Calcular e Prever"
+    
+    ### Interpretação dos resultados:
+    
+    - **Ticks por Minuto**: Representa a velocidade de queda da odd, calculada pela fórmula: ((odd - 1)*100)/tempo_restante
+    - **Odd Final Prevista**: A odd estimada para o final do período (minuto 45 ou 90)
+    - **Tempo Restante**: Quantidade de minutos até o final do período
+    
+    ### Sobre odds regressivas:
+    
+    No mercado de under limite, as odds são regressivas, começando mais altas e caindo à medida que o jogo avança.
+    Idealmente, elas devem chegar próximas a 1.01 no final de cada período (minuto 45 ou 90).
+    """)

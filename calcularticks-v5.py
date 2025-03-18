@@ -258,10 +258,10 @@ if calcular or 'calculos_realizados' in st.session_state:
         )
         
         # Linha principal para o tempo normal
-        linha_normal = base.mark_line(color='blue').encode(
+        linha_normal = base.mark_line(color='yellow').encode(
             color=alt.condition(
                 alt.datum.Tipo == 'Regular',
-                alt.value('blue'),
+                alt.value('yellow'),
                 alt.value('red')
             )
         )
@@ -270,7 +270,7 @@ if calcular or 'calculos_realizados' in st.session_state:
         pontos = base.mark_circle(size=60).encode(
             color=alt.condition(
                 alt.datum.Tipo == 'Regular',
-                alt.value('blue'),
+                alt.value('yellow'),
                 alt.value('red')
             ),
             tooltip=['Minuto', 'Odd Prevista', 'Tipo', 'Ticks Percorridos']

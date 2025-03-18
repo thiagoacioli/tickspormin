@@ -3,8 +3,8 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-# Definir os valores da escala de odds regressiva
-odds_regressivas = [
+# Lista de odds regressivas
+TICKS = [
     20, 19.5, 19, 18.5, 18, 17.5, 17, 16.5, 16, 15.5, 15, 14.5, 14, 13.5, 13, 12.5, 12, 11.5, 11, 10.5, 10,
     9.8, 9.6, 9.4, 9.2, 9, 8.8, 8.6, 8.4, 8.2, 8, 7.8, 7.6, 7.4, 7.2, 7, 6.8, 6.6, 6.4, 6.2, 6,
     5.9, 5.8, 5.7, 5.6, 5.5, 5.4, 5.3, 5.2, 5.1, 5, 4.9, 4.8, 4.7, 4.6, 4.5, 4.4, 4.3, 4.2, 4.1, 4,
@@ -19,189 +19,235 @@ odds_regressivas = [
     1.19, 1.18, 1.17, 1.16, 1.15, 1.14, 1.13, 1.12, 1.11, 1.1, 1.09, 1.08, 1.07, 1.06, 1.05, 1.04, 1.03, 1.02, 1.01
 ]
 
+# Configuração da página Streamlit
+st.set_page_config(page_title="Calculadora de Ticks por Minuto", layout="wide")
+
+# Título do aplicativo
+st.title("Calculadora de Ticks por Minuto - Under Limite")
+st.write("Esta calculadora ajuda a prever a movimentação das odds no mercado de under limite.")
+
+# Função para calcular ticks por minuto
 def calcular_ticks_por_minuto(odd, tempo):
-    """Calcula os ticks por minuto com base na odd atual e tempo"""
     return ((odd - 1) * 100) / tempo
 
+# Função para encontrar a odd mais próxima na lista de ticks
 def encontrar_odd_mais_proxima(odd):
-    """Encontra o valor mais próximo na lista de odds regressivas"""
-    return min(odds_regressivas, key=lambda x: abs(x - odd))
+    return min(TICKS, key=lambda x: abs(x - odd))
 
+# Função para encontrar o índice da odd na lista de ticks
 def encontrar_indice_odd(odd):
-    """Encontra o índice da odd mais próxima na lista de odds regressivas"""
     odd_proxima = encontrar_odd_mais_proxima(odd)
-    return odds_regressivas.index(odd_proxima)
+    return TICKS.index(odd_proxima)
 
-def prever_odd_para_tempo_alvo(odd_atual, tempo_atual, ticks_por_minuto, tempo_alvo):
-    """Prevê a odd para um tempo específico do jogo"""
-    # Verifica se o tempo alvo é depois do tempo atual
-    if tempo_alvo <= tempo_atual:
-        return odd_atual
+# Função para prever odd futura baseada no tick rate
+def prever_odd(odd_atual, tempo_atual, tempo_futuro, acrescimos_ht=0, acrescimos_ft=0):
+    # Ajustar o tempo considerando os acréscimos
+    tempo_maximo = 90 + acrescimos_ft
     
-    # Calcula quantos minutos no futuro
-    minutos_futuros = tempo_alvo - tempo_atual
+    if tempo_atual <= 45:
+        tempo_maximo_primeiro_tempo = 45 + acrescimos_ht
+        if tempo_futuro <= tempo_maximo_primeiro_tempo:
+            tempo_restante = tempo_futuro - tempo_atual
+        else:
+            tempo_restante = (tempo_maximo_primeiro_tempo - tempo_atual) + (tempo_futuro - 45)
+    else:
+        tempo_restante = tempo_futuro - tempo_atual
     
-    # Calcula quantos ticks serão movidos nesse tempo
-    ticks_a_mover = ticks_por_minuto * minutos_futuros
+    # Verificar se o tempo futuro é válido
+    if tempo_futuro > tempo_maximo or tempo_futuro <= tempo_atual:
+        return None, None
     
-    # Encontra o índice atual na escala de odds
+    # Calcular ticks por minuto
+    tick_rate = calcular_ticks_por_minuto(odd_atual, tempo_maximo - tempo_atual)
+    
+    # Calcular quantos ticks vão diminuir no período
+    ticks_a_diminuir = tick_rate * tempo_restante / 100
+    
+    # Encontrar índice da odd atual na lista
     indice_atual = encontrar_indice_odd(odd_atual)
     
-    # Calcula o novo índice
-    novo_indice = min(len(odds_regressivas) - 1, int(indice_atual + ticks_a_mover))
+    # Calcular novo índice
+    novo_indice = int(indice_atual + ticks_a_diminuir)
     
-    # Retorna a odd prevista
-    if 0 <= novo_indice < len(odds_regressivas):
-        return odds_regressivas[novo_indice]
-    elif novo_indice >= len(odds_regressivas):
-        return 1.01  # Retorna o valor mínimo se ultrapassar
-    else:
-        return odd_atual  # Mantém a odd atual se o índice for negativo
+    # Garantir que o índice está dentro dos limites
+    novo_indice = min(max(novo_indice, 0), len(TICKS) - 1)
+    
+    # Retornar a nova odd e o tick rate
+    return TICKS[novo_indice], tick_rate
 
-def calcular_tempo_restante(tempo, periodo):
-    """Calcula o tempo restante no período atual"""
-    if periodo == "HT":
-        return 45 - tempo
-    else:  # FT
-        return 90 - tempo
+# Interface principal
+tabs = st.tabs(["Calculadora", "Previsão por Blocos", "Visualização"])
 
-def criar_tabela_previsoes(odd_atual, tempo_atual, periodo, ticks_por_minuto):
-    """Cria uma tabela com previsões de odds para tempos específicos do jogo"""
-    # Determinar o tempo máximo
-    if periodo == "HT":
-        tempo_maximo = 45
-    else:
-        tempo_maximo = 90
+with tabs[0]:
+    st.header("Calculadora de Ticks por Minuto")
     
-    # Criar intervalos de 5 em 5 minutos
-    if periodo == "HT":
-        # Para primeiro tempo, criar intervalos de 5 em 5 até 45
-        intervalos = list(range(max(tempo_atual + 5, 5), 46, 5))
-    else:
-        # Para segundo tempo, criar intervalos de 5 em 5 a partir de 50 até 90
-        intervalos = list(range(max(tempo_atual + 5, 50), 91, 5))
+    col1, col2 = st.columns(2)
     
-    # Criar dados da tabela
-    dados = []
-    for tempo_jogo in intervalos:
-        if tempo_jogo > tempo_atual:  # Só prever para o futuro
-            odd_prevista = prever_odd_para_tempo_alvo(odd_atual, tempo_atual, ticks_por_minuto, tempo_jogo)
-            dados.append({
-                "Minuto do Jogo": tempo_jogo,
-                "Odd Prevista": odd_prevista
-            })
+    with col1:
+        odd_atual = st.number_input("Odd Atual", min_value=1.01, max_value=20.0, value=2.0, step=0.01, format="%.2f")
+        tempo_atual = st.number_input("Tempo Atual (minutos)", min_value=0, max_value=90, value=10, step=1)
+        acrescimos_ht = st.number_input("Acréscimos 1º Tempo (minutos)", min_value=0, max_value=15, value=2, step=1)
+        acrescimos_ft = st.number_input("Acréscimos 2º Tempo (minutos)", min_value=0, max_value=15, value=5, step=1)
     
-    return pd.DataFrame(dados)
-
-# Configurar o aplicativo Streamlit
-st.set_page_config(page_title="Calculadora de Ticks - Under Limite", layout="wide")
-
-st.title("Calculadora de Ticks por Minuto - Under Limite")
-
-col1, col2 = st.columns(2)
-
-with col1:
-    st.subheader("Dados Atuais")
-    
-    # Seleção do período
-    periodo = st.radio("Período", ["HT", "FT"], horizontal=True)
-    
-    # Entradas do usuário
-    if periodo == "HT":
-        tempo = st.number_input("Tempo Atual (minutos)", min_value=0, max_value=45, value=10, step=1)
-    else:
-        tempo = st.number_input("Tempo Atual (minutos)", min_value=46, max_value=90, value=60, step=1)
-    
-    odd = st.number_input("Odd Atual", min_value=1.01, max_value=20.0, value=3.0, step=0.01, format="%.2f")
-    
-    # Cálculo dos ticks por minuto
-    ticks_por_minuto = calcular_ticks_por_minuto(odd, tempo)
-    
-    st.metric("Ticks por Minuto", f"{ticks_por_minuto:.2f}")
-    
-    # Tempo restante
-    tempo_restante = calcular_tempo_restante(tempo, periodo)
-    st.metric("Tempo Restante", f"{tempo_restante} minutos")
-    
-    # Odd mais próxima na escala
-    odd_proxima = encontrar_odd_mais_proxima(odd)
-    st.metric("Odd mais próxima na escala", f"{odd_proxima:.2f}")
-    
-    # Posição na escala de odds
-    indice_odd = encontrar_indice_odd(odd)
-    st.metric("Posição na escala de odds", f"{indice_odd} / {len(odds_regressivas)}")
-
-with col2:
-    st.subheader("Previsão de Odds para Minutos Específicos")
-    
-    st.markdown("**Selecione um minuto para ver a previsão da odd:**")
-    
-    # Determinar os botões a serem mostrados com base no período e tempo atual
-    if periodo == "HT":
-        # Para primeiro tempo, botões de 5 em 5 até 45
-        tempos_possiveis = [t for t in range(5, 46, 5) if t > tempo]
-    else:
-        # Para segundo tempo, botões de 5 em 5 de 50 até 90
-        tempos_possiveis = [t for t in range(50, 91, 5) if t > tempo]
-    
-    # Criar grade de botões
-    # Determinar quantos botões por linha
-    botoes_por_linha = 6
-    
-    # Criar linhas necessárias
-    for i in range(0, len(tempos_possiveis), botoes_por_linha):
-        cols = st.columns(botoes_por_linha)
-        # Adicionar botões a esta linha
-        for j in range(botoes_por_linha):
-            idx = i + j
-            if idx < len(tempos_possiveis):
-                tempo_alvo = tempos_possiveis[idx]
-                if cols[j].button(f"{tempo_alvo}'", key=f"btn_{tempo_alvo}"):
-                    odd_prevista = prever_odd_para_tempo_alvo(odd, tempo, ticks_por_minuto, tempo_alvo)
-                    st.success(f"No minuto {tempo_alvo}, a odd prevista é: **{odd_prevista:.2f}**")
-    
-    # Tabela completa de previsões
-    st.markdown("### Tabela de Previsões")
-    tabela_previsoes = criar_tabela_previsoes(odd, tempo, periodo, ticks_por_minuto)
-    
-    if not tabela_previsoes.empty:
-        st.dataframe(tabela_previsoes, hide_index=True)
+    with col2:
+        # Identificar se estamos no primeiro ou segundo tempo
+        periodo = "1º Tempo" if tempo_atual <= 45 else "2º Tempo"
+        st.info(f"Período atual: {periodo}")
         
-        # Criar gráfico de previsão
+        # Calcular tick rate
+        tempo_maximo = 90 + acrescimos_ft if tempo_atual > 45 else 45 + acrescimos_ht
+        if tempo_atual <= 45 and tempo_maximo < tempo_atual:
+            st.error("Erro: O tempo atual não pode ser maior que o tempo máximo do 1º tempo.")
+        else:
+            tick_rate = calcular_ticks_por_minuto(odd_atual, tempo_maximo - tempo_atual)
+            st.metric("Taxa de Ticks por Minuto", f"{tick_rate:.4f}")
+            
+            # Encontrar índice na lista de ticks
+            indice_odd = encontrar_indice_odd(odd_atual)
+            odd_padronizada = TICKS[indice_odd]
+            st.metric("Odd padronizada mais próxima", f"{odd_padronizada:.2f}")
+            
+            # Mostrar posição no ranking de ticks
+            st.metric("Posição no ranking de ticks", f"{indice_odd + 1} de {len(TICKS)}")
+    
+    # Previsão para os próximos minutos
+    st.subheader("Previsão para os próximos minutos")
+    
+    # Criar uma tabela de previsão
+    previsoes = {}
+    tempos_futuros = [tempo_atual + 5, tempo_atual + 10, tempo_atual + 15, 45, 60, 75, 90, 90 + acrescimos_ft]
+    tempos_futuros = [t for t in tempos_futuros if t > tempo_atual and t <= (90 + acrescimos_ft)]
+    
+    if tempos_futuros:
+        for tempo_futuro in tempos_futuros:
+            nova_odd, tick_rate = prever_odd(odd_atual, tempo_atual, tempo_futuro, acrescimos_ht, acrescimos_ft)
+            if nova_odd is not None:
+                previsoes[tempo_futuro] = nova_odd
+        
+        # Criar DataFrame para exibição
+        df_previsoes = pd.DataFrame({
+            "Tempo (min)": list(previsoes.keys()),
+            "Odd Prevista": list(previsoes.values())
+        })
+        
+        st.table(df_previsoes.set_index("Tempo (min)"))
+    else:
+        st.warning("Não é possível fazer previsões para tempos futuros com base nos dados atuais.")
+
+with tabs[1]:
+    st.header("Previsão por Blocos de Tempo")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        odd_atual_bloco = st.number_input("Odd Atual", min_value=1.01, max_value=20.0, value=2.0, step=0.01, format="%.2f", key="odd_bloco")
+        tempo_atual_bloco = st.number_input("Tempo Atual (minutos)", min_value=0, max_value=90, value=10, step=1, key="tempo_bloco")
+        acrescimos_ht_bloco = st.number_input("Acréscimos 1º Tempo (minutos)", min_value=0, max_value=15, value=2, step=1, key="ht_bloco")
+        acrescimos_ft_bloco = st.number_input("Acréscimos 2º Tempo (minutos)", min_value=0, max_value=15, value=5, step=1, key="ft_bloco")
+        
+    # Botões para previsão em blocos de 5 minutos
+    st.subheader("Selecione o tempo alvo para previsão")
+    
+    # Criar botões de 5 em 5 minutos de acordo com o tempo atual
+    tempo_max = 90 + acrescimos_ft_bloco
+    botoes_tempos = list(range(5, tempo_max + 1, 5))
+    botoes_tempos = [t for t in botoes_tempos if t > tempo_atual_bloco]
+    
+    if not botoes_tempos:
+        st.warning("Não há tempos futuros disponíveis para previsão.")
+    else:
+        # Organizar botões em linhas
+        cols = st.columns(5)
+        tempo_selecionado = None
+        
+        for i, tempo in enumerate(botoes_tempos):
+            col_idx = i % 5
+            if cols[col_idx].button(f"{tempo}'", key=f"btn_{tempo}"):
+                tempo_selecionado = tempo
+        
+        if tempo_selecionado:
+            nova_odd, tick_rate = prever_odd(odd_atual_bloco, tempo_atual_bloco, tempo_selecionado, acrescimos_ht_bloco, acrescimos_ft_bloco)
+            
+            if nova_odd is not None:
+                st.success(f"Previsão para o minuto {tempo_selecionado}:")
+                st.metric("Odd Prevista", f"{nova_odd:.2f}")
+                st.metric("Taxa de Ticks", f"{tick_rate:.4f}")
+            else:
+                st.error("Não foi possível calcular a previsão para esse tempo.")
+
+with tabs[2]:
+    st.header("Visualização da Queda de Odds")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        odd_viz = st.number_input("Odd Atual", min_value=1.01, max_value=20.0, value=2.0, step=0.01, format="%.2f", key="odd_viz")
+        tempo_viz = st.number_input("Tempo Atual (minutos)", min_value=0, max_value=90, value=10, step=1, key="tempo_viz")
+        acrescimos_ht_viz = st.number_input("Acréscimos 1º Tempo (minutos)", min_value=0, max_value=15, value=2, step=1, key="ht_viz")
+        acrescimos_ft_viz = st.number_input("Acréscimos 2º Tempo (minutos)", min_value=0, max_value=15, value=5, step=1, key="ft_viz")
+    
+    # Gerar tempos para visualização
+    tempo_max_viz = 90 + acrescimos_ft_viz
+    tempos_viz = list(range(tempo_viz, tempo_max_viz + 1))
+    odds_previstas = []
+    
+    for t in tempos_viz:
+        nova_odd, _ = prever_odd(odd_viz, tempo_viz, t, acrescimos_ht_viz, acrescimos_ft_viz)
+        if nova_odd is not None:
+            odds_previstas.append(nova_odd)
+        else:
+            odds_previstas.append(None)
+    
+    # Remover None values
+    tempos_viz_clean = [tempos_viz[i] for i in range(len(tempos_viz)) if odds_previstas[i] is not None]
+    odds_previstas_clean = [odd for odd in odds_previstas if odd is not None]
+    
+    if tempos_viz_clean and odds_previstas_clean:
+        # Criar gráfico
         fig, ax = plt.subplots(figsize=(10, 6))
+        ax.plot(tempos_viz_clean, odds_previstas_clean, marker='o', linestyle='-', color='blue')
         
-        # Dados para o gráfico
-        tempos_jogo = [tempo] + tabela_previsoes["Minuto do Jogo"].tolist()
-        odds_previstas = [odd] + tabela_previsoes["Odd Prevista"].tolist()
+        # Adicionar linha vertical no minuto 45
+        if tempo_viz <= 45 and max(tempos_viz_clean) > 45:
+            ax.axvline(x=45, color='red', linestyle='--', alpha=0.7)
+            ax.text(45, max(odds_previstas_clean), 'Intervalo', rotation=90, verticalalignment='top')
         
-        # Plot
-        plt.plot(tempos_jogo, odds_previstas, 'o-', color='blue')
-        plt.xlabel('Minuto do Jogo')
-        plt.ylabel('Odd Prevista')
-        plt.title('Projeção das Odds ao Longo do Tempo')
-        plt.grid(True)
+        # Configurar gráfico
+        ax.set_title('Previsão de Queda das Odds ao Longo do Tempo')
+        ax.set_xlabel('Tempo (minutos)')
+        ax.set_ylabel('Odd')
+        ax.grid(True, alpha=0.3)
         
-        # Adiciona linha para odd mínima (1.01)
-        plt.axhline(y=1.01, color='r', linestyle='--', alpha=0.7)
+        # Ajustar limites do eixo y para melhor visualização
+        max_odd = max(odds_previstas_clean)
+        min_odd = min(odds_previstas_clean)
+        y_margin = (max_odd - min_odd) * 0.1  # 10% de margem
+        ax.set_ylim(max(1.0, min_odd - y_margin), max_odd + y_margin)
         
-        # Definir limites do eixo y
-        plt.ylim(max(0.9, min(odds_previstas) - 0.2), max(odds_previstas) + 0.5)
-        
+        # Mostrar gráfico no Streamlit
         st.pyplot(fig)
+        
+        # Tabela de dados para download
+        df_viz = pd.DataFrame({
+            "Tempo (min)": tempos_viz_clean,
+            "Odd Prevista": odds_previstas_clean
+        })
+        
+        st.subheader("Dados da Previsão")
+        st.dataframe(df_viz)
+        
+        # Download dos dados
+        csv = df_viz.to_csv(index=False)
+        st.download_button(
+            label="Download dos dados em CSV",
+            data=csv,
+            file_name="previsao_odds.csv",
+            mime="text/csv",
+        )
     else:
-        st.info("Não há previsões disponíveis para o tempo restante.")
+        st.warning("Não há dados suficientes para gerar a visualização.")
 
-# Mostrar explicação do funcionamento
-with st.expander("Como funciona a calculadora?"):
-    st.markdown("""
-    ### Funcionamento da Calculadora de Ticks por Minuto
-
-    1. **Fórmula utilizada**: `((odd - 1) * 100) / tempo`
-    2. **Períodos**:
-       - HT: Do minuto 0 ao 45
-       - FT: Do minuto 46 ao 90
-    3. **Escala de Odds**: A calculadora usa uma escala regressiva padronizada de odds que vai de 20.0 até 1.01
-    4. **Previsão**: Baseada no ritmo atual de ticks por minuto, a calculadora prevê em qual odd o mercado estará nos minutos específicos do jogo
-
-    **Observação**: Este app é uma ferramenta de auxílio para análise de tendências nas odds do mercado under limite, onde as odds são regressivas e tendem a 1.01 no final de cada período.
-    """)
+# Rodapé com informações
+st.markdown("---")
+st.write("Calculadora de Ticks por Minuto para mercado de Under Limite")
+st.write("Fórmula utilizada: ((odd - 1)*100)/tempo restante")

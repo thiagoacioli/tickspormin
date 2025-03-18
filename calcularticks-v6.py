@@ -32,9 +32,16 @@ def encontrar_indice_odd(odd):
     odd_proxima = encontrar_odd_mais_proxima(odd)
     return odds_regressivas.index(odd_proxima)
 
-def prever_odds_futuras(odd_atual, tempo_atual, ticks_por_minuto, minutos_futuros):
-    """Prevê as odds futuras com base nos ticks por minuto"""
-    # Calcula quantos ticks serão movidos em X minutos
+def prever_odd_para_tempo_alvo(odd_atual, tempo_atual, ticks_por_minuto, tempo_alvo):
+    """Prevê a odd para um tempo específico do jogo"""
+    # Verifica se o tempo alvo é depois do tempo atual
+    if tempo_alvo <= tempo_atual:
+        return odd_atual
+    
+    # Calcula quantos minutos no futuro
+    minutos_futuros = tempo_alvo - tempo_atual
+    
+    # Calcula quantos ticks serão movidos nesse tempo
     ticks_a_mover = ticks_por_minuto * minutos_futuros
     
     # Encontra o índice atual na escala de odds
@@ -59,29 +66,30 @@ def calcular_tempo_restante(tempo, periodo):
         return 90 - tempo
 
 def criar_tabela_previsoes(odd_atual, tempo_atual, periodo, ticks_por_minuto):
-    """Cria uma tabela com previsões de odds em intervalos de 5 minutos"""
-    # Determinar o tempo máximo restante
-    tempo_maximo = calcular_tempo_restante(tempo_atual, periodo)
+    """Cria uma tabela com previsões de odds para tempos específicos do jogo"""
+    # Determinar o tempo máximo
+    if periodo == "HT":
+        tempo_maximo = 45
+    else:
+        tempo_maximo = 90
     
-    # Criar intervalos de 5 minutos até o tempo máximo
-    intervalos = list(range(5, tempo_maximo + 5, 5))
-    if intervalos and intervalos[-1] > tempo_maximo:
-        intervalos[-1] = tempo_maximo
+    # Criar intervalos de 5 em 5 minutos
+    if periodo == "HT":
+        # Para primeiro tempo, criar intervalos de 5 em 5 até 45
+        intervalos = list(range(max(tempo_atual + 5, 5), 46, 5))
+    else:
+        # Para segundo tempo, criar intervalos de 5 em 5 a partir de 50 até 90
+        intervalos = list(range(max(tempo_atual + 5, 50), 91, 5))
     
-    # Se não houver intervalos, adicionar apenas o tempo máximo
-    if not intervalos and tempo_maximo > 0:
-        intervalos = [tempo_maximo]
-        
     # Criar dados da tabela
     dados = []
-    for minutos in intervalos:
-        odd_prevista = prever_odds_futuras(odd_atual, tempo_atual, ticks_por_minuto, minutos)
-        tempo_no_jogo = tempo_atual + minutos
-        dados.append({
-            "Minutos Futuros": minutos,
-            "Tempo no Jogo": tempo_no_jogo,
-            "Odd Prevista": odd_prevista
-        })
+    for tempo_jogo in intervalos:
+        if tempo_jogo > tempo_atual:  # Só prever para o futuro
+            odd_prevista = prever_odd_para_tempo_alvo(odd_atual, tempo_atual, ticks_por_minuto, tempo_jogo)
+            dados.append({
+                "Minuto do Jogo": tempo_jogo,
+                "Odd Prevista": odd_prevista
+            })
     
     return pd.DataFrame(dados)
 
@@ -124,25 +132,36 @@ with col1:
     st.metric("Posição na escala de odds", f"{indice_odd} / {len(odds_regressivas)}")
 
 with col2:
-    st.subheader("Previsão de Odds Futuras")
+    st.subheader("Previsão de Odds para Minutos Específicos")
     
-    # Criar botões para previsões rápidas
-    st.markdown("**Previsão Rápida:**")
-    cols = st.columns(5)
+    st.markdown("**Selecione um minuto para ver a previsão da odd:**")
     
-    previsao_selecionada = None
-    botoes_tempo = [5, 10, 15, 20, 30]
+    # Determinar os botões a serem mostrados com base no período e tempo atual
+    if periodo == "HT":
+        # Para primeiro tempo, botões de 5 em 5 até 45
+        tempos_possiveis = [t for t in range(5, 46, 5) if t > tempo]
+    else:
+        # Para segundo tempo, botões de 5 em 5 de 50 até 90
+        tempos_possiveis = [t for t in range(50, 91, 5) if t > tempo]
     
-    for i, min_futuros in enumerate(botoes_tempo):
-        if min_futuros <= tempo_restante:
-            if cols[i].button(f"+{min_futuros} min"):
-                previsao_selecionada = min_futuros
+    # Criar grade de botões
+    # Determinar quantos botões por linha
+    botoes_por_linha = 6
     
-    if previsao_selecionada:
-        odd_prevista = prever_odds_futuras(odd, tempo, ticks_por_minuto, previsao_selecionada)
-        st.success(f"Em +{previsao_selecionada} minutos (min {tempo + previsao_selecionada}), a odd prevista é: **{odd_prevista:.2f}**")
+    # Criar linhas necessárias
+    for i in range(0, len(tempos_possiveis), botoes_por_linha):
+        cols = st.columns(botoes_por_linha)
+        # Adicionar botões a esta linha
+        for j in range(botoes_por_linha):
+            idx = i + j
+            if idx < len(tempos_possiveis):
+                tempo_alvo = tempos_possiveis[idx]
+                if cols[j].button(f"{tempo_alvo}'", key=f"btn_{tempo_alvo}"):
+                    odd_prevista = prever_odd_para_tempo_alvo(odd, tempo, ticks_por_minuto, tempo_alvo)
+                    st.success(f"No minuto {tempo_alvo}, a odd prevista é: **{odd_prevista:.2f}**")
     
     # Tabela completa de previsões
+    st.markdown("### Tabela de Previsões")
     tabela_previsoes = criar_tabela_previsoes(odd, tempo, periodo, ticks_por_minuto)
     
     if not tabela_previsoes.empty:
@@ -152,12 +171,12 @@ with col2:
         fig, ax = plt.subplots(figsize=(10, 6))
         
         # Dados para o gráfico
-        tempos_jogo = [tempo] + tabela_previsoes["Tempo no Jogo"].tolist()
+        tempos_jogo = [tempo] + tabela_previsoes["Minuto do Jogo"].tolist()
         odds_previstas = [odd] + tabela_previsoes["Odd Prevista"].tolist()
         
         # Plot
         plt.plot(tempos_jogo, odds_previstas, 'o-', color='blue')
-        plt.xlabel('Tempo no Jogo (minutos)')
+        plt.xlabel('Minuto do Jogo')
         plt.ylabel('Odd Prevista')
         plt.title('Projeção das Odds ao Longo do Tempo')
         plt.grid(True)
@@ -170,7 +189,7 @@ with col2:
         
         st.pyplot(fig)
     else:
-        st.info("Não há tempo suficiente restante para fazer previsões.")
+        st.info("Não há previsões disponíveis para o tempo restante.")
 
 # Mostrar explicação do funcionamento
 with st.expander("Como funciona a calculadora?"):
@@ -182,7 +201,7 @@ with st.expander("Como funciona a calculadora?"):
        - HT: Do minuto 0 ao 45
        - FT: Do minuto 46 ao 90
     3. **Escala de Odds**: A calculadora usa uma escala regressiva padronizada de odds que vai de 20.0 até 1.01
-    4. **Previsão**: Baseada no ritmo atual de ticks por minuto, a calculadora prevê em qual odd o mercado estará nos próximos minutos
+    4. **Previsão**: Baseada no ritmo atual de ticks por minuto, a calculadora prevê em qual odd o mercado estará nos minutos específicos do jogo
 
     **Observação**: Este app é uma ferramenta de auxílio para análise de tendências nas odds do mercado under limite, onde as odds são regressivas e tendem a 1.01 no final de cada período.
     """)

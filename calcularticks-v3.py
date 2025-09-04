@@ -6,7 +6,7 @@ import altair as alt
 
 # Configuração da página
 st.set_page_config(
-    page_title="Calculadora de Ticks para Under Limite",
+    page_title="Calculadora",
     page_icon="📉",
     layout="wide"
 )
